@@ -58,6 +58,21 @@ func resourceAwsLambdaFunction() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
+			"dead_letter_config": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				MinItems: 0,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"target_arn": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+					},
+				},
+			},
 			"function_name": {
 				Type:     schema.TypeString,
 				Required: true,
@@ -222,6 +237,16 @@ func resourceAwsLambdaFunctionCreate(d *schema.ResourceData, meta interface{}) e
 		Publish:      aws.Bool(d.Get("publish").(bool)),
 	}
 
+	if v, ok := d.GetOk("dead_letter_config"); ok {
+		dlcMaps := v.([]interface{})
+		if len(dlcMaps) == 1 { // Schema guarantees either 0 or 1
+			dlcMap := dlcMaps[0].(map[string]interface{})
+			params.DeadLetterConfig = &lambda.DeadLetterConfig{
+				TargetArn: aws.String(dlcMap["target_arn"].(string)),
+			}
+		}
+	}
+
 	if v, ok := d.GetOk("vpc_config"); ok {
 		config, err := validateVPCConfig(v)
 		if err != nil {
@@ -341,6 +366,16 @@ func resourceAwsLambdaFunctionRead(d *schema.ResourceData, meta interface{}) err
 
 	if err := d.Set("environment", flattenLambdaEnvironment(function.Environment)); err != nil {
 		log.Printf("[ERR] Error setting environment for Lambda Function (%s): %s", d.Id(), err)
+	}
+
+	if function.DeadLetterConfig != nil && function.DeadLetterConfig.TargetArn != nil {
+		err := d.Set("dead_letter_config", []interface{}{
+			map[string]interface{}{
+				"target_arn": *function.DeadLetterConfig.TargetArn,
+			},
+		})
+	} else {
+		d.Set("dead_letter_config", []interface{}{})
 	}
 
 	// List is sorted from oldest to latest
@@ -484,6 +519,16 @@ func resourceAwsLambdaFunctionUpdate(d *schema.ResourceData, meta interface{}) e
 	if d.HasChange("kms_key_arn") {
 		configReq.KMSKeyArn = aws.String(d.Get("kms_key_arn").(string))
 		configUpdate = true
+	}
+	if d.HasChange("dead_letter_config") {
+		dlcMaps := d.Get("dead_letter_config").([]interface{})
+		if len(dlcMaps) == 1 { // Schema guarantees either 0 or 1
+			dlcMap := dlcMaps[0].(map[string]interface{})
+			configReq.DeadLetterConfig = &lambda.DeadLetterConfig{
+				TargetArn: aws.String(dlcMap["target_arn"].(string)),
+			}
+			configUpdate = true
+		}
 	}
 	if d.HasChange("environment") {
 		if v, ok := d.GetOk("environment"); ok {
