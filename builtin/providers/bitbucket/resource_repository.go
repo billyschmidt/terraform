@@ -33,6 +33,10 @@ type Repository struct {
 	} `json:"links,omitempty"`
 }
 
+type PipelinesConfig struct {
+	Pipelines bool `json:"enabled,omitempty"`
+}
+
 func resourceRepository() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceRepositoryCreate,
@@ -101,6 +105,11 @@ func resourceRepository() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"pipelines": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 		},
 	}
 }
@@ -122,6 +131,14 @@ func newRepositoryFromResource(d *schema.ResourceData) *Repository {
 	return repo
 }
 
+func enablePipelinesFromResource(d *schema.ResourceData) *PipelinesConfig {
+	//return pipelines
+	pipeline := &PipelinesConfig{
+		Pipelines: d.Get("pipelines").(bool),
+	}
+	return pipeline
+}
+
 func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 	client := m.(*BitbucketClient)
 	repository := newRepositoryFromResource(d)
@@ -140,6 +157,15 @@ func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	pipelines := enablePipelinesFromResource(d)
+	pipelinesbytedata, err := json.Marshal(pipelines)
+
+	// do a put against pipelines endpoint
+	_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config",
+		d.Get("owner").(string),
+		d.Get("name").(string),
+	), bytes.NewBuffer(pipelinesbytedata))
 
 	return resourceRepositoryRead(d, m)
 }
@@ -165,8 +191,22 @@ func resourceRepositoryCreate(d *schema.ResourceData, m interface{}) error {
 
 	d.SetId(string(fmt.Sprintf("%s/%s", d.Get("owner").(string), d.Get("name").(string))))
 
+	if d.Get("pipelines") != nil {
+		pipelines := enablePipelinesFromResource(d)
+		pipelinesbytedata, err := json.Marshal(pipelines)
+
+		_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config",
+			d.Get("owner").(string),
+			d.Get("name").(string),
+		), bytes.NewBuffer(pipelinesbytedata))
+
+		if err != nil {
+			return err
+		}
+	}
 	return resourceRepositoryRead(d, m)
 }
+
 func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 
 	client := m.(*BitbucketClient)
@@ -209,6 +249,30 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
+	// do a get against api to get pipelines config
+	pipelines_req, _ := client.Get(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config",
+		d.Get("owner").(string),
+		d.Get("name").(string),
+	))
+
+	// unmarshal it into my struct
+	if pipelines_req.StatusCode == 200 {
+
+		var pipeline PipelinesConfig
+
+		body, readerr := ioutil.ReadAll(pipelines_req.Body)
+		if readerr != nil {
+			return readerr
+		}
+
+		decodeerr := json.Unmarshal(body, &pipeline)
+		if decodeerr != nil {
+			return decodeerr
+		}
+
+		// set the resource data
+		d.Set("pipelines", pipeline.Pipelines)
+	}
 	return nil
 }
 
