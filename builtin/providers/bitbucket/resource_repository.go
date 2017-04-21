@@ -34,7 +34,7 @@ type Repository struct {
 }
 
 type PipelinesConfig struct {
-	Pipelines bool `json:"enabled,omitempty"`
+	Pipelines bool `json:"enabled"`
 }
 
 func resourceRepository() *schema.Resource {
@@ -166,6 +166,10 @@ func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 		d.Get("owner").(string),
 		d.Get("name").(string),
 	), bytes.NewBuffer(pipelinesbytedata))
+
+	if err != nil {
+		return err
+	}
 
 	return resourceRepositoryRead(d, m)
 }

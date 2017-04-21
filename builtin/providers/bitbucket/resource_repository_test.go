@@ -17,6 +17,7 @@ func TestAccBitbucketRepository_basic(t *testing.T) {
 		resource "bitbucket_repository" "test_repo" {
 			owner = "%s"
 			name = "test-repo-for-repository-test"
+			pipelines = true
 		}
 	`, testUser)
 
@@ -29,6 +30,7 @@ func TestAccBitbucketRepository_basic(t *testing.T) {
 				Config: testAccBitbucketRepositoryConfig,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckBitbucketRepositoryExists("bitbucket_repository.test_repo", &repo),
+					resource.TestCheckResourceAttr("bitbucket_repository.test_repo", "pipelines", "true"),
 				),
 			},
 		},
