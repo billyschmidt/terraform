@@ -12,7 +12,7 @@ Provides an API Gateway Usage Plan.
 
 ## Example Usage
 
-```
+```hcl
 resource "aws_api_gateway_rest_api" "myapi" {
   name = "MyDemoAPI"
 }
@@ -72,8 +72,8 @@ The API Gateway Usage Plan argument layout is a structure composed of several su
 
 #### Api Stages arguments
 
-  * `api_id` (Optional) - API Id of the associated API stage in a usage plan.
-  * `stage` (Optional) - API stage name of the associated API stage in a usage plan.
+  * `api_id` (Required) - API Id of the associated API stage in a usage plan.
+  * `stage` (Required) - API stage name of the associated API stage in a usage plan.
 
 #### Quota Settings Arguments
 
