@@ -37,6 +37,13 @@ type PipelinesConfig struct {
 	Pipelines bool `json:"enabled"`
 }
 
+type PipelinesVariable struct {
+	Key     string `json:"key,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Secured bool   `json:"secured"`
+	// UUID    string `json:"uuid,omitempty"`
+}
+
 func resourceRepository() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceRepositoryCreate,
@@ -110,6 +117,31 @@ func resourceRepository() *schema.Resource {
 				Optional: true,
 				Default:  false,
 			},
+			"pipelines_variable": &schema.Schema{
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"key": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"value": &schema.Schema{
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"secured": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
+						},
+						// "uuid": &schema.Schema{
+						//	Type:     schema.TypeString,
+						//	Computed: true,
+						//},
+					},
+				},
+			},
 		},
 	}
 }
@@ -137,6 +169,15 @@ func enablePipelinesFromResource(d *schema.ResourceData) *PipelinesConfig {
 		Pipelines: d.Get("pipelines").(bool),
 	}
 	return pipeline
+}
+
+func newPipelinesVarFromResource(d *schema.ResourceData) *PipelinesVariable {
+	pipelines_var := &PipelinesVariable{
+		Key:     d.Get("key").(string),
+		Value:   d.Get("value").(string),
+		Secured: d.Get("secured").(bool),
+	}
+	return pipelines_var
 }
 
 func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
@@ -170,6 +211,22 @@ func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	// pipelines_var := newPipelinesVarFromResource(d)
+	//pipelinesvarbytedata, err := json.Marshal(pipelines_var)
+
+	// todo: get uuid of variable
+
+	// do a put against variables endpoint
+	// _, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/variables/%s",
+	//	d.Get("owner").(string),
+	//	d.Get("name").(string),
+	// d.Get("uuid").(string),
+	//), bytes.NewBuffer(pipelinesvarbytedata))
+
+	//if err != nil {
+	//	return err
+	//}
 
 	return resourceRepositoryRead(d, m)
 }
@@ -208,6 +265,22 @@ func resourceRepositoryCreate(d *schema.ResourceData, m interface{}) error {
 			return err
 		}
 	}
+
+	//fmt.Printf("%+v\n", pvar)
+	// if d.Get("pipelines_variable") != nil {
+	//	pipelines_var := newPipelinesVarFromResource(d)
+	//	pipelinesvarbytedata, err := json.Marshal(pipelines_var)
+
+	//	_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/variables",
+	//		d.Get("owner").(string),
+	//		d.Get("name").(string),
+	//	), bytes.NewBuffer(pipelinesvarbytedata))
+
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
+
 	return resourceRepositoryRead(d, m)
 }
 
@@ -277,15 +350,53 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 		// set the resource data
 		d.Set("pipelines", pipeline.Pipelines)
 	}
+
+	// GET for pipelines variables
+	pipelines_var_req, _ := client.Get(
+		fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/variables/",
+			d.Get("owner").(string),
+			d.Get("name").(string),
+		))
+
+	// unmarshal it into my struct
+	if pipelines_var_req.StatusCode == 200 {
+
+		var pipeline_var PipelinesVariable
+		body, readerr := ioutil.ReadAll(pipelines_var_req.Body)
+		if readerr != nil {
+			return readerr
+		}
+
+		decodeerr := json.Unmarshal(body, &pipeline_var)
+		if decodeerr != nil {
+			return decodeerr
+		}
+
+		//fmt.Printf("%T\n", pipeline_var)
+		// set the resource data
+		d.Set("pipelines_variable.key", pipeline_var.Key)
+		d.Set("value", pipeline_var.Value)
+		d.Set("secured", pipeline_var.Secured)
+		// d.Set("uuid", pipeline_var.UUID)
+	}
 	return nil
 }
 
 func resourceRepositoryDelete(d *schema.ResourceData, m interface{}) error {
 	client := m.(*BitbucketClient)
-	_, err := client.Delete(fmt.Sprintf("2.0/repositories/%s/%s",
-		d.Get("owner").(string),
-		d.Get("name").(string),
-	))
+	_, err := client.Delete(
+		fmt.Sprintf("2.0/repositories/%s/%s",
+			d.Get("owner").(string),
+			d.Get("name").(string),
+		))
+
+	// DELETE for pipelines variables
+	//pipelines_var_req, _ := client.Delete(
+	//	fmt.Sprintf("/1.0/repositories/%s/%s/pipelines_config/variables/%s",
+	//		d.Get("owner").(string),
+	//		d.Get("name").(string),
+	//		d.Get("variable_uuid").(string),
+	//	))
 
 	return err
 }
