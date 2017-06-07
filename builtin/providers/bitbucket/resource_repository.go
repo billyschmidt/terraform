@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-
 	"github.com/hashicorp/terraform/helper/schema"
+	"io/ioutil"
+	"log"
 )
 
 type CloneUrl struct {
@@ -42,6 +42,11 @@ type PipelinesVariable struct {
 	Value   string `json:"value,omitempty"`
 	Secured bool   `json:"secured"`
 	// UUID    string `json:"uuid,omitempty"`
+}
+
+type PipelinesSshKey struct {
+	PrivateKey string `json:"private_key,omitempty"`
+	PublicKey  string `json:"public_key,omitempty"`
 }
 
 func resourceRepository() *schema.Resource {
@@ -142,6 +147,22 @@ func resourceRepository() *schema.Resource {
 					},
 				},
 			},
+			"pipelines_ssh_key": &schema.Schema{
+				Type:     schema.TypeSet,
+				Optional: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"private_key": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+						"public_key": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+					},
+				},
+			},
 		},
 	}
 }
@@ -180,6 +201,14 @@ func newPipelinesVarFromResource(d *schema.ResourceData) *PipelinesVariable {
 	return pipelines_var
 }
 
+func newPipelinesSshKeyFromResource(d *schema.ResourceData) *PipelinesSshKey {
+	pipelines_ssh_key := &PipelinesSshKey{
+		PrivateKey: d.Get("private_key").(string),
+		PublicKey:  d.Get("public_key").(string),
+	}
+	return pipelines_ssh_key
+}
+
 func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 	client := m.(*BitbucketClient)
 	repository := newRepositoryFromResource(d)
@@ -207,6 +236,19 @@ func resourceRepositoryUpdate(d *schema.ResourceData, m interface{}) error {
 		d.Get("owner").(string),
 		d.Get("name").(string),
 	), bytes.NewBuffer(pipelinesbytedata))
+
+	if err != nil {
+		return err
+	}
+
+	// begin pipelines ssh keys
+	pipelines_ssh_key := newPipelinesSshKeyFromResource(d)
+	pipelinessshkeybytedata, err := json.Marshal(pipelines_ssh_key)
+
+	_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/ssh/key_pair",
+		d.Get("owner").(string),
+		d.Get("name").(string),
+	), bytes.NewBuffer(pipelinessshkeybytedata))
 
 	if err != nil {
 		return err
@@ -266,7 +308,24 @@ func resourceRepositoryCreate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
-	//fmt.Printf("%+v\n", pvar)
+	if d.Get("pipelines_ssh_key") != nil {
+
+		// this might work
+		//pipelineskey := d.Get("pipelines_ssh_key").(*schema.Set)
+
+		pipelines_ssh_key := newPipelinesSshKeyFromResource(d)
+		pipelinessshkeybytedata, err := json.Marshal(pipelines_ssh_key)
+
+		_, err = client.Put(fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/ssh/key_pair",
+			d.Get("owner").(string),
+			d.Get("name").(string),
+		), bytes.NewBuffer(pipelinessshkeybytedata))
+
+		if err != nil {
+			return err
+		}
+	}
+
 	// if d.Get("pipelines_variable") != nil {
 	//	pipelines_var := newPipelinesVarFromResource(d)
 	//	pipelinesvarbytedata, err := json.Marshal(pipelines_var)
@@ -359,6 +418,7 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 		))
 
 	// unmarshal it into my struct
+	// I think this is where my logic is wrong for variables
 	if pipelines_var_req.StatusCode == 200 {
 
 		var pipeline_var PipelinesVariable
@@ -374,10 +434,37 @@ func resourceRepositoryRead(d *schema.ResourceData, m interface{}) error {
 
 		//fmt.Printf("%T\n", pipeline_var)
 		// set the resource data
-		d.Set("pipelines_variable.key", pipeline_var.Key)
+		d.Set("key", pipeline_var.Key)
 		d.Set("value", pipeline_var.Value)
 		d.Set("secured", pipeline_var.Secured)
 		// d.Set("uuid", pipeline_var.UUID)
+	}
+
+	// GET for ssh keys
+	pipelines_sshkey_req, _ := client.Get(
+		fmt.Sprintf("2.0/repositories/%s/%s/pipelines_config/ssh/key_pair",
+			d.Get("owner").(string),
+			d.Get("name").(string),
+		))
+
+	// 200 = already exists
+	// 404 = doesn't exist
+	if pipelines_sshkey_req.StatusCode == 200 {
+
+		var pipeline_ssh_key PipelinesSshKey
+		body, readerr := ioutil.ReadAll(pipelines_sshkey_req.Body)
+		if readerr != nil {
+			return readerr
+		}
+
+		decodeerr := json.Unmarshal(body, &pipeline_ssh_key)
+		if decodeerr != nil {
+			return decodeerr
+		}
+
+		// set the resource data
+		d.Set("private_key", pipeline_ssh_key.PrivateKey)
+		d.Set("public_key", pipeline_ssh_key.PublicKey)
 	}
 	return nil
 }
